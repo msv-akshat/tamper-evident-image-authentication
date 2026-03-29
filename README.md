@@ -183,6 +183,89 @@ Tests signature survival across JPEG compression at various quality levels and r
 - Each user must run `python main.py genkeys` to generate their own key pair. Private keys are excluded from version control via `.gitignore`.
 - Minimum recommended image size: **128×128 pixels** (larger images = more embedding capacity and redundancy).
 
+## Full-Stack Web Application
+
+This repository now includes a complete web-based educational dashboard for signing and verifying images.
+
+### Added Structure
+
+```
+image_auth_system/
+├── backend/
+│   ├── requirements.txt
+│   └── app/
+│       ├── main.py
+│       ├── schemas.py
+│       ├── api/
+│       │   └── routes.py
+│       └── services/
+│           └── auth_service.py
+└── frontend/
+    ├── package.json
+    ├── vite.config.js
+    ├── index.html
+    └── src/
+        ├── main.jsx
+        ├── App.jsx
+        ├── styles.css
+        └── components/
+            ├── UploadCard.jsx
+            ├── StepCard.jsx
+            └── VerificationPanel.jsx
+```
+
+### Backend (FastAPI)
+
+API endpoints:
+
+- `POST /sign-image`
+  - Input: multipart image file (`image`)
+  - Output includes hash, full signature, signature preview, embedding info, base64 signed image, and debug step logs.
+- `POST /verify-image`
+  - Input: multipart image file (`image`)
+  - Output includes extracted signature, recomputed hash, validity flag, and authenticity message.
+
+Run backend:
+
+```bash
+cd ..
+python -m venv .venv
+
+# Windows
+.venv\Scripts\activate
+
+cd image_auth_system/backend
+pip install -r requirements.txt
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+### Frontend (React + Vite)
+
+The dashboard includes:
+
+- Drag-and-drop image upload with preview
+- Step-by-step visualization cards (image load, hash, signature, embedding, signed image)
+- Expand/collapse for long content and tooltip-style explain labels
+- Animated progress and loading states
+- Verification panel with extracted signature, recomputed hash, and authentic/tampered badge
+- Processing logs panel for transparent debugging flow
+
+Run frontend:
+
+```bash
+cd image_auth_system/frontend
+npm install
+npm run dev
+```
+
+Optional API URL override (if backend is not on default `http://127.0.0.1:8000`):
+
+```bash
+# Windows PowerShell example
+$env:VITE_API_URL="http://127.0.0.1:8000"
+npm run dev
+```
+
 ## License
 
 Academic / research use.
