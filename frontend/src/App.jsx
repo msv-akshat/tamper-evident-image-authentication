@@ -123,6 +123,9 @@ function App() {
     embeddingDebug?.selected_block_meta?.block_col ??
     null;
   const hasSelectedBlock = selectedBlockRow !== null && selectedBlockCol !== null;
+  const selectedBlockOperations = embeddingDebug?.selected_block_operations || [];
+  const operationsForTable =
+    selectedBlockOperations.length > 0 ? selectedBlockOperations : (embeddingDebug?.sample_operations || []);
 
   const stepStatusLabel = {
     0: "Waiting for Upload",
@@ -441,12 +444,15 @@ function App() {
                   </div>
                 )}
 
-                {Array.isArray(embeddingDebug.sample_operations) && embeddingDebug.sample_operations.length > 0 && (
+                {Array.isArray(operationsForTable) && operationsForTable.length > 0 && (
                   <div className="ops-table-wrap">
-                    <p className="label">Intermediate embedding operations (sample)</p>
+                    <p className="label">Intermediate embedding operations (selected block)</p>
                     <p className="muted-note">
-                      This table shows only the selected embedding coefficients, not the full DCT matrix.
+                      This table shows only embedding operations for the selected block, not the full DCT matrix.
                       Coeff after can be 0 when quantization snaps a small coefficient to the nearest valid bin.
+                    </p>
+                    <p className="muted-note">
+                      Block ({selectedBlockRow}, {selectedBlockCol}) operations: {embeddingDebug.selected_block_modified_operations_count ?? 0} modified / {embeddingDebug.selected_block_total_operations ?? operationsForTable.length} total.
                     </p>
                     <div className="ops-table-wrap-scroll">
                       <table className="ops-table">
@@ -464,7 +470,7 @@ function App() {
                           </tr>
                         </thead>
                         <tbody>
-                          {embeddingDebug.sample_operations.map((op) => (
+                          {operationsForTable.map((op) => (
                             <tr key={`row-${op.payload_bit_index}`} className={op.was_modified ? "changed-row" : ""}>
                               <td>{op.payload_bit_index}</td>
                               <td>{op.block_row},{op.block_col}</td>

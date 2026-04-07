@@ -18,6 +18,11 @@ from modules.signature import generate_keys, load_private_key, load_public_key, 
 from modules.verification import compute_robust_hash
 
 
+# WhatsApp commonly downsizes large images before heavy JPEG compression.
+# Keeping signed outputs under this side length avoids resize-induced extraction failure.
+MAX_SIGN_DIMENSION = 1600
+
+
 def _ensure_keys() -> None:
     private_key_path = os.path.join(PROJECT_ROOT, "keys", "private_key.pem")
     public_key_path = os.path.join(PROJECT_ROOT, "keys", "public_key.pem")
@@ -50,6 +55,19 @@ def _signature_preview(signature_b64: str, preview_chars: int = 50) -> str:
     return signature_b64[:preview_chars]
 
 
+def _normalize_image_for_sharing(image: np.ndarray) -> tuple[np.ndarray, Dict[str, int]]:
+    h, w = image.shape[:2]
+    max_dim = max(h, w)
+    if max_dim <= MAX_SIGN_DIMENSION:
+        return image, {"width": int(w), "height": int(h), "resized": 0}
+
+    scale = MAX_SIGN_DIMENSION / float(max_dim)
+    new_w = max(8, int(round(w * scale)))
+    new_h = max(8, int(round(h * scale)))
+    resized = cv2.resize(image, (new_w, new_h), interpolation=cv2.INTER_AREA)
+    return resized, {"width": int(new_w), "height": int(new_h), "resized": 1}
+
+
 def _build_embedding_debug(image: np.ndarray, signature_bytes: bytes) -> Dict[str, Any]:
     ycrcb = cv2.cvtColor(image, cv2.COLOR_BGR2YCrCb)
     y_channel = ycrcb[:, :, 0].astype(np.float32)
@@ -66,6 +84,7 @@ def _build_embedding_debug(image: np.ndarray, signature_bytes: bytes) -> Dict[st
     selected_dct_after = None
     selected_delta = None
     selected_block_meta = None
+    selected_block_operations: List[Dict[str, Any]] = []
     best_change_score = -1.0
 
     bit_index = 0
@@ -148,6 +167,7 @@ def _build_embedding_debug(image: np.ndarray, signature_bytes: bytes) -> Dict[st
                     "max_abs_pixel_delta": round(change_score, 6),
                     "modified_in_block": modified_in_block,
                 }
+                selected_block_operations = [dict(op) for op in block_ops]
 
             block_index += 1
 
@@ -155,6 +175,7 @@ def _build_embedding_debug(image: np.ndarray, signature_bytes: bytes) -> Dict[st
             break
 
     modified_ops = [op for op in all_operations if op["was_modified"]]
+    selected_block_modified_ops = [op for op in selected_block_operations if op["was_modified"]]
 
     # Build a clearer sample: include both embedded 0-bits and 1-bits when possible.
     zero_bit_ops = [op for op in modified_ops if op["embedded_bit"] == 0]
@@ -194,6 +215,9 @@ def _build_embedding_debug(image: np.ndarray, signature_bytes: bytes) -> Dict[st
         "selected_block_delta": selected_delta,
         "selected_dct_before": selected_dct_before,
         "selected_dct_after": selected_dct_after,
+        "selected_block_operations": selected_block_operations,
+        "selected_block_modified_operations_count": len(selected_block_modified_ops),
+        "selected_block_total_operations": len(selected_block_operations),
         "selected_block_explanation": {
             "block_row": int(selected_block_meta["block_row"]) if selected_block_meta else None,
             "block_col": int(selected_block_meta["block_col"]) if selected_block_meta else None,
@@ -202,6 +226,7 @@ def _build_embedding_debug(image: np.ndarray, signature_bytes: bytes) -> Dict[st
         },
         "modified_operations_count": len(modified_ops),
         "total_operations_scanned": len(all_operations),
+        # Kept for backward compatibility with existing UI paths.
         "sample_operations": sample_operations,
     }
 
@@ -211,6 +236,14 @@ def sign_image_bytes(image_bytes: bytes) -> Dict[str, Any]:
 
     image = _decode_image(image_bytes)
     debug_steps.append("Image loaded")
+
+    image, normalization_info = _normalize_image_for_sharing(image)
+    if normalization_info["resized"]:
+        debug_steps.append(
+            f"Resized before signing for share robustness: {normalization_info['width']}x{normalization_info['height']}"
+        )
+    else:
+        debug_steps.append("Input size already share-safe; no resize needed")
 
     robust_hash = compute_robust_hash(image)
     final_hash = _sha256_hex(robust_hash)
@@ -237,6 +270,7 @@ def sign_image_bytes(image_bytes: bytes) -> Dict[str, Any]:
             "method": "DCT",
             "description": "Signature embedded into frequency domain",
         },
+        "normalization": normalization_info,
         "embedding_debug": embedding_debug,
         "signed_image": signed_image_b64,
         "debug_steps": debug_steps,

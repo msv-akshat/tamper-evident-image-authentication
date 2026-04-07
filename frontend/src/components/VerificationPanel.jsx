@@ -56,6 +56,7 @@ function VerificationPanel({ apiBase, seedImageBase64 = "", onSeedConsumed = () 
     }
   };
 
+
   return (
     <section className="panel-card verify-panel">
       <h2>Verification Panel</h2>

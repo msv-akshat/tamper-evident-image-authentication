@@ -9,35 +9,26 @@ from modules.embedding import extract_signature_dct
 
 
 def compute_robust_hash(image: np.ndarray, grid_size: int = 16) -> str:
-    # block-mean perceptual hash - stable across compression but detects edits
+    # Coarse low-frequency DCT hash. It is intentionally quantized so small
+    # embedding/compression perturbations do not flip the signed message.
     if len(image.shape) == 3:
         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     else:
         gray = image
 
-    h, w = gray.shape
-    block_h = h // grid_size
-    block_w = w // grid_size
+    # Keep deterministic dimensions regardless of source resolution.
+    resized = cv2.resize(gray, (32, 32), interpolation=cv2.INTER_AREA)
+    smoothed = cv2.GaussianBlur(resized, (5, 5), 0)
 
-    # compute mean intensity per block
-    means = []
-    for r in range(grid_size):
-        for c in range(grid_size):
-            block = gray[r * block_h:(r + 1) * block_h,
-                         c * block_w:(c + 1) * block_w]
-            means.append(float(block.mean()))
+    dct_block = cv2.dct(smoothed.astype(np.float32))
+    low_freq = dct_block[:4, :4].flatten()[1:]  # drop DC term
 
-    means = np.array(means)
-    median_val = np.median(means)
+    quant_step = 30.0
+    quantized = np.round(low_freq / quant_step).astype(np.int16)
+    quantized = np.clip(quantized, -128, 127)
 
-    # threshold against median to get binary hash
-    hash_bits = (means > median_val).astype(np.uint8)
-    bit_string = "".join(str(b) for b in hash_bits)
-
-    while len(bit_string) % 8 != 0:
-        bit_string += "0"
-
-    hash_bytes = int(bit_string, 2).to_bytes(len(bit_string) // 8, byteorder="big")
+    # Encode signed bins into bytes so the hash string remains compact and stable.
+    hash_bytes = (quantized + 128).astype(np.uint8).tobytes()
     return hash_bytes.hex()
 
 
